@@ -1,0 +1,103 @@
+---
+title: "Statistical Analysis of the NBA for development of a Fantasy Draft Strategy(Yahoo)"
+author: "dantheng"
+date: "12/17/2020"
+output: html_document
+---
+    Yahoo: 
+        * FGM(Field Goals Made) = 2
+        * Free Throw Made(FTM) = 1
+        * 3 Point Made(3PM) = 2
+        * Points Scored(PTS) = 1
+        * Offensive Rebound(ORB) = 1
+        * Defensive Rebounds(DRB) = 2
+        * Assists(AST) = 2
+        * Steals(STL) = 2
+        * Blocks(BLK) = 2
+        * Turnovers(TOV) = -1
+        * Technical Fouls(TEC) = -2
+        * Ejections(EJCT) = -3
+        * Flagrant Fouls(FF) = -3 
+## Make Yahoo Draft Rank
+```{r}
+library(pacman)
+p_load('rio', 'tidyr', 'dplyr', 'stringr', 'ggplot2', 'plotly')
+players <- import("/Users/danieltheng/Desktop/Learning R/Fantasy-Basketball-Analysis/2019-2020 Player Per Game Data.xlsx")
+players <- subset(players, select = -c(7,10,12,13,14,15,16,17,20))
+yahoo.score <- function(FG, FTM, threes, PTS, ORB, DRB, AST, STL, BLK, TOV, PF){
+        score <- FG*2 + FTM*1 + threes*2 + PTS*1 + ORB*1 + DRB*2 + AST*2 + STL*2 + BLK*2 + TOV*-1 + PF*-2.5
+    return(score)
+}
+```
+
+```{r}
+AFP <- c()
+for (i in c(1:652)) {
+    AFP[i] <- yahoo.score(FG = players[i,"FG"], FTM = players[i,"FT"], 
+                          threes = players[i,"3P"], PTS = players[i,"PTS"], 
+                          ORB = players[i,"ORB"], DRB = players[i,"DRB"],
+                          AST = players[i,"AST"], STL = players[i,"STL"],
+                          BLK = players[i,"BLK"], TOV = players[i,"TOV"],
+                          PF = players[i,"PF"])
+}
+```
+
+```{r}
+yahoo.draft <- players[,c(1,2,3,4,5,6)]
+yahoo.draft["AFP"] <- AFP
+ydraft.ranked <- arrange(yahoo.draft, desc(AFP))
+row.names(yahoo.draft.ranked) <- NULL
+ydraft.ranked <- yahoo.draft.ranked[1:224,]
+```
+## Yahoo Supplementary Analysis
+```{r}
+ydraft.ranked <- ydraft.ranked %>% mutate(eAFP = Games * AFP)
+ydraft.ranked <- arrange(ydraft.ranked, desc(eAFP))
+ydraft.ranked[,'Rank'] <- c(1:224) 
+ydraft.ranked <- ydraft.ranked[,c(9,1,2,3,4,5,6,7,8)]
+```
+
+```{r}
+Position <- c("C", "PF", "SF", "SG", "PG")
+C <- ydraft.ranked[which(ydraft.ranked[,3] == 'C'),]
+PF <- ydraft.ranked[which(ydraft.ranked[,3] == 'PF'),]
+SF <- ydraft.ranked[which(ydraft.ranked[,3] == 'SF'),]
+SG <- ydraft.ranked[which(ydraft.ranked[,3] == 'SG'),]
+PG <- ydraft.ranked[which(ydraft.ranked[,3] == 'PG'),]
+rownames(C) <- NULL
+rownames(PF) <- NULL
+rownames(SF) <- NULL
+rownames(SG) <- NULL
+rownames(PG) <- NULL
+```
+
+```{r}
+eAFP_averages <- c(mean(C[,9], na.rm = TRUE),mean(PF[,9], na.rm = TRUE),mean(SF[,9], na.rm = TRUE),mean(SG[,9], na.rm = TRUE),mean(PG[,9], na.rm = TRUE))
+eAFP_stdev <- c(sd(C[,9], na.rm = TRUE),sd(PF[,9], na.rm = TRUE),sd(SF[,9], na.rm = TRUE),sd(SG[,9], na.rm = TRUE),sd(PG[,9], na.rm = TRUE))
+Position.N <- ydraft.ranked %>% count(Position)
+Position.N <- Position.N[c(1,2,4,5,8),]
+Position.50N <- ydraft.ranked[1:50,] %>% count(Position)
+eAFP_stats <- data.frame(Position, Position.N[,2], eAFP_averages, eAFP_stdev)
+```
+
+```{r}
+fig1 <- plot_ly(ydraft.ranked, x = ~c(1:224), y = ~eAFP, type = 'scatter', mode = 'lines')
+#View Plot
+fig1 
+#View Exploratory Stats data
+eAFP_stats
+Position.50N
+```
+
+```{r}
+fig2 <- plot_ly(C, x = ~c(1:38), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Center')
+fig2 <- add_trace(fig2, data = PF, x = ~c(1:46), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Power Forward')
+fig2 <- add_trace(fig2, data = SF, x = ~c(1:33), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Small Foward')
+fig2 <- add_trace(fig2, data = SG, x = ~c(1:51), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Shooting Guard')
+fig2 <- add_trace(fig2, data = PG, x = ~c(1:51), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Point Guard')
+fig2
+```
+
+```{r}
+write.csv(ydraft.ranked, file = "/Users/danieltheng/Desktop/Learning R/Fantasy-Basketball-Analysis/ydraft Ranking")
+```

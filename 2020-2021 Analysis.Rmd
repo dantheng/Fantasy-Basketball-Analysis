@@ -1,0 +1,178 @@
+---
+title: "Statistical Analysis of the NBA for development of a Fantasy Draft Strategy(ESPN)"
+author: "dantheng"
+date: "12/12/2020"
+output: html_document
+---
+## Table of Contents
+  * Project Description
+  * Load Packages & Data
+  * Clean Data
+  * Make a Draft Rank
+  * Perform Supplementary Analysis
+  
+## Project Description
+    The purpose of this project is to use basic statistics, feature engineering, and data visualization to make observations on NBA players to develop a Fantasy Draft strategy(via ESPN's fantasy system)
+    In order to complete this project 3 objects need to be fulfilled:
+      1. Use the past season's player per game data (2019-2020) to predict how many points per game they are expected to generate and how many points they are expected to generate over the entire season
+      2. Rank all the players in the league based on their projected season points and plot that production vs their rank. 
+      3. Similar to objective 2, but rank each player by their position and plot player's production vs their rank by position
+    This project will use ESPN's fantasy point system. The default system is shown below:
+        * Field Goal Made (FGM) = 2
+        * Field Goals Attempted(FGA) = -1
+        * Free Throw Made (FTM) = 1
+        * Free Throws Attempted(FTA) = -1
+        * 3 point made (3PM) = 1
+        * Total Rebounds(TRB) = 1
+        * Assists (AST) = 2
+        * Steals (STL) = 4
+        * Blocks (BLK) = 4
+        * Turnovers (TOV) = -2
+        * Points (PTS)  = 1
+    Although the specific league that I am in has altered the scoring to system to the one below: 
+        * Field Goal Made (FGM) = 1
+        * Field Goals Attempted(FGA) = -1
+        * Free Throw Made (FTM) = 1
+        * Free Throws Attempted(FTA) = -1
+        * 3 point made (3PM) = 1
+        * Total Rebounds(TRB) = 1
+        * Assists (AST) = 2
+        * Steals (STL) = 3
+        * Blocks (BLK) = 2
+        * Turnovers (TOV) = -2.5
+        * Ejections(EJ) = -5
+        * Double Doubles (DD) = 5
+        * Triple Doubles (TD) = 10
+        * Quadruple Doubles (QD) = 20
+        * Points (PTS)  = 1
+    Data was taken from Basketball Reference's 2019-2020 player per game stats. The data can be found [here](https://www.basketball-reference.com/leagues/NBA_2020_per_game.html). Player data was copied into excel to be imported into R. In addition, because Stephen Curry and Kevin Durant did not play much during the 2019-2020 season those players were added from the last season that they played. Because the data has no double double, triple double, or ejection data those stats will not be factored into the analysis. 
+    Files can be found here: 
+    
+    
+## Load Packages and Data into R
+```{r}
+library(pacman)
+p_load('rio', 'tidyr', 'dplyr', 'stringr', 'ggplot2', 'plotly')
+players <- import("/Users/danieltheng/Desktop/Learning R/Fantasy-Basketball-Analysis/2019-2020 Player Per Game Data.xlsx")
+```
+
+## Clean Data
+    Since the data contains stats that are not factored in fantasy we will remove those 
+```{r}
+players <- subset(players, select = -c(7,10,12,13,14,15,16,17,20))
+```
+
+## Make ESPN Draft Rank  
+    Make a function that will the ESPN scoring system to calculate the average fantasy points for a given player 
+```{r}
+#Create a function that returns the average fantasy points they would return per a game. 
+#Use the scoring system detailed above to assign the apprioriate weights to the stats
+ESPN.score <- function(FG, FGA, FTM, FTA, TRB, AST, STL, BLK, TOV, PTS){
+    score <- FG*1 + 
+            (FGA-FG)*-1 + 
+            FTM*.5 + 
+            (FTA-FTM)*-.5 + 
+            TRB*1 + 
+            AST*2 + 
+            STL*3 + 
+            BLK*2 + 
+            TOV*-2.5 + 
+            PTS*1
+    return(score)
+}
+```
+    Use a For loop to average fantasy points per game for every player in the data 
+```{r}
+#Create a variable that has average fantasy points (AFP) for each player
+AFP1 <- c()
+for (i in 1:652) {
+    AFP1[i] <- ESPN.score(FG = players[i,"FG"], 
+                          FGA = players[i,"FGA"], 
+                          FTM = players[i,"FT"], 
+                          FTA = players[i,"FTA"], 
+                          TRB = players[i,"TRB"], 
+                          AST = players[i,"AST"], 
+                          STL = players[i,"STL"], 
+                          BLK = players[i,"BLK"], 
+                          TOV = players[i,"TOV"], 
+                          PTS = players[i,"PTS"])
+}
+```
+    Create new variable with only AFP game stat + some player info
+```{r}
+#Remove the stats from player data and add AFP
+draft <- players[,c(1,2,3,4,5,6)]
+draft["AFP"] <- AFP1
+```
+    Order players in descending order of AFP
+```{r}
+#Arrange the player data by AFP and save to a new dataframe
+draft.ranked <- arrange(draft, desc(AFP))
+row.names(draft.ranked) <- NULL
+```
+    Since only max 16 teams with 14 man roster only need the first 224
+```{r}
+draft.ranked <- draft.ranked[1:224,]
+```
+## ESPN Supplementary Analysis 
+  Although a players average AFP maybe high, you want to draft a player that plays a lot as well so you the most opportunities to receive points from games they will play in. 
+  Add a column for estimate total AFP over the season
+```{r}
+draft.ranked <- draft.ranked %>% mutate(eAFP = Games * AFP)
+draft.ranked <- arrange(draft.ranked, desc(eAFP))
+draft.ranked[,'Rank'] <- c(1:224)
+draft.ranked <- draft.ranked[,c(9,1,2,3,4,5,6,7,8)]
+```
+  Because positions in basketball affect how you should draft(you are required to have players from all positions), it is important to optimize positionally as well.
+  Collect the average AFP for each position to determine which positions are poorer in AFP and thus should be valued higher
+```{r}
+Position <- c("C", "PF", "SF", "SG", "PG")
+C <- draft.ranked[which(draft.ranked[,3] == 'C'),]
+PF <- draft.ranked[which(draft.ranked[,3] == 'PF'),]
+SF <- draft.ranked[which(draft.ranked[,3] == 'SF'),]
+SG <- draft.ranked[which(draft.ranked[,3] == 'SG'),]
+PG <- draft.ranked[which(draft.ranked[,3] == 'PG'),]
+rownames(C) <- NULL
+rownames(PF) <- NULL
+rownames(SF) <- NULL
+rownames(SG) <- NULL
+rownames(PG) <- NULL
+```
+  Save the means and  standard deviations of the eAFP and the number of players at each position into a dataframe.  
+```{r}
+eAFP_averages <- c(mean(C[,9], na.rm = TRUE),mean(PF[,9], na.rm = TRUE),mean(SF[,9], na.rm = TRUE),mean(SG[,9], na.rm = TRUE),mean(PG[,9], na.rm = TRUE))
+eAFP_stdev <- c(sd(C[,9], na.rm = TRUE),sd(PF[,9], na.rm = TRUE),sd(SF[,9], na.rm = TRUE),sd(SG[,9], na.rm = TRUE),sd(PG[,9], na.rm = TRUE))
+Position.N <- draft.ranked %>% count(Position)
+Position.N <- Position.N[c(1,2,4,5,8),]
+Position.50N <- draft.ranked[1:50,] %>% count(Position)
+eAFP_stats <- data.frame(Position, Position.N[,2], eAFP_averages, eAFP_stdev)
+```
+  Plot eAFP as a function of rank, to determine when the marginal loss for choosing a player not next on the ranking. Then use the exploratory statistics dataframe to make decisions on how to fill out the roster. Viewing position histograms would be use here as well.  
+```{r}
+fig1 <- plot_ly(draft.ranked, x = ~c(1:224), y = ~eAFP, type = 'scatter', mode = 'lines')
+#View Plot
+fig1 
+#View Exploratory Stats data
+eAFP_stats
+Position.50N
+```
+```{r}
+#View Points as a function of rank curve for each position 
+fig2 <- plot_ly(C, x = ~c(1:48), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Center')
+fig2 <- add_trace(fig2, data = PF, x = ~c(1:42), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Power Forward')
+fig2 <- add_trace(fig2, data = SF, x = ~c(1:31), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Small Foward')
+fig2 <- add_trace(fig2, data = SG, x = ~c(1:46), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Shooting Guard')
+fig2 <- add_trace(fig2, data = PG, x = ~c(1:52), y = ~eAFP, type = 'scatter', mode = 'lines', name = 'Point Guard')
+fig2
+```
+  After the 50th position the marginal return between each player becomes linear and thus minimized. Therefore the strategy would be follow the draft rankings regardless of position up to the 50th position on the ranking. From the exploratory statistics there are some important observations to be made. 
+  1. Between Centers, Power Forwards and Shooting Guards there is very little difference in average eAFP production at their rank. Although the top 5 Shooting Guards and Power Forwards have better production than Centers. After that 5th rank in their respective positions they are very similar.   
+  2. According to the basic stats table there are the least amount of Shooting Guards and they have the highest standard deviation. 
+  3. Point guards out perform other positions in a comparable rank. 
+  4. Top 5 Small Forwards are comparable to top 5 Shooting Guards and Power Forwards. After the 5th rank their production is much worst than others. 
+  
+## Conclusion
+  When drafting it is important to draft as many players in the top 50 as possible. Since there are less centers and small forwards those positions should be drafted first. There are lot of point guards in the top 50, so they have less priority. That being said one should stick to the top 2 or 3 players according to the draft order.  
+```{r}
+write.csv(x = draft.ranked, file = "/Users/danieltheng/Desktop/Learning R/Fantasy-Basketball-Analysis/ESPN Draft Rank.csv")
+```
